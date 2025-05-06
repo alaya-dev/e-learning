@@ -30,17 +30,18 @@ class Certificat
     #[ORM\JoinColumn(name: 'idFormation', referencedColumnName: 'id', nullable: true)]
     private ?Formation $formation = null;
     
-    // #[ORM\ManyToOne(targetEntity: User::class)]
-    // private ?User $user = null;
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: true)]
+    private ?User $user = null;
 
     public function getUser(): ?User
     {
-        return null;
+        return $this->user;
     }
 
     public function setUser(?User $user): self
     {
-        // Ne fait rien pour l'instant
+        $this->user = $user;
         return $this;
     }
     ##[ORM\ManyToOne(targetEntity: Formation::class, inversedBy: 'certificats')]
@@ -171,5 +172,6 @@ class Certificat
         return $this;
     }
 }
+
 
 

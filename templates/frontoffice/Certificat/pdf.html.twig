@@ -31,7 +31,7 @@
         
         <p>Ce certificat atteste que</p>
         
-        <h2>Participant</h2>
+         <h2>{{ certificat.user ? certificat.user.firstName ~ ' ' ~ certificat.user.lastName : 'Participant' }}</h2>
         
         <p>a suivi avec succès la formation</p>
         
