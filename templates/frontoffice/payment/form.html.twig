@@ -19,7 +19,7 @@
                 <form id="payment-form">
                     <div class="mb-3">
                         <label for="email" class="form-label">Email</label>
-                        <input type="email" id="email" class="form-control" required>
+                        <input type="email" id="email" class="form-control" value="{{ app.user.email }}" readonly>
                     </div>
                     
                     <div class="mb-3">
@@ -139,8 +139,8 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        token: token,
-                        email: emailInput.value
+                        token: token
+                        // L'email n'est plus envoyé car nous utilisons celui de l'utilisateur connecté
                     })
                 })
                 .then(response => response.json())
@@ -165,4 +165,6 @@
         });
     </script>
 {% endblock %}
+
+
 

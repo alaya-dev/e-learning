@@ -66,7 +66,7 @@ class PaymentController extends AbstractController
         // Récupérer les données du formulaire
         $data = json_decode($request->getContent(), true);
         $token = $data['token'] ?? null;
-        $email = $data['email'] ?? null;
+        $email = $user->getEmail(); // Utiliser l'email de l'utilisateur connecté
 
         if (!$token) {
             return new JsonResponse(['error' => 'Token de carte manquant'], 400);
@@ -76,11 +76,21 @@ class PaymentController extends AbstractController
         Stripe::setApiKey($_ENV['STRIPE_SECRET_KEY']);
 
         try {
-            // Créer une charge avec Stripe
-            $charge = Charge::create([
-                'amount' => $formation->getPrix() * 100, // Montant en centimes
-                'currency' => 'eur',
+            // Créer un client avec la carte
+            $customer = \Stripe\Customer::create([
+                'email' => $email,
+                'name' => $user->getFirstName() . ' ' . $user->getLastName(),
                 'source' => $token,
+                'metadata' => [
+                    'user_id' => $user->getId()
+                ]
+            ]);
+            
+            // Créer une charge avec le client
+            $charge = \Stripe\Charge::create([
+                'amount' => $formation->getPrix() * 100,
+                'currency' => 'eur',
+                'customer' => $customer->id,
                 'description' => 'Paiement pour la formation: ' . $formation->getName(),
                 'receipt_email' => $email,
                 'metadata' => [
@@ -146,6 +156,10 @@ class PaymentController extends AbstractController
         ]);
     }
 }
+
+
+
+
 
 
 
