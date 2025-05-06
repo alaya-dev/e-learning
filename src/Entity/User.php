@@ -271,3 +271,4 @@ private ?string $password = null;
         return (string)$this->email; // Symfony recommande d’utiliser l’email comme identifiant
     }
 }
+

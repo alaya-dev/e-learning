@@ -4,63 +4,153 @@ namespace App\Controller;
 use App\Entity\Formation;
 use Doctrine\ORM\EntityManagerInterface;
 use Stripe\Stripe;
-use Stripe\Checkout\Session;
+use Stripe\Charge;
+use Stripe\Exception\CardException;
+use Stripe\Exception\ApiErrorException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Security\Core\Security;
+use Symfony\Component\Routing\RouterInterface;
 
 class PaymentController extends AbstractController
 {
-    #[Route('/front/payment', name: 'front_payment_index', methods: ['GET'])]
-    public function index(): Response
+    private $security;
+    
+    public function __construct(Security $security)
     {
-        return $this->render('frontoffice/payment/index.html.twig');
+        $this->security = $security;
     }
 
-    #[Route('/payment/session', name: 'payment_session', methods: ['POST'])]
-    public function createSession(Request $request, EntityManagerInterface $em, UrlGeneratorInterface $urlGenerator): JsonResponse
+    #[Route('/payment/form/{id}', name: 'payment_form', methods: ['GET'])]
+    public function showPaymentForm(int $id, EntityManagerInterface $em): Response
     {
-        $data = json_decode($request->getContent(), true);
-        $formation = $em->getRepository(Formation::class)->find($data['formationId']);
+        // Vérifier si l'utilisateur est connecté
+        $user = $this->security->getUser();
+        if (!$user) {
+            $this->addFlash('error', 'Vous devez être connecté pour effectuer un paiement.');
+            return $this->redirectToRoute('app_login');
+        }
+        
+        // Récupérer la formation manuellement
+        $formation = $em->getRepository(Formation::class)->find($id);
+        
+        if (!$formation) {
+            $this->addFlash('error', 'Formation non trouvée.');
+            return $this->redirectToRoute('app_front_formation_index');
+        }
+        
+        return $this->render('frontoffice/payment/form.html.twig', [
+            'formation' => $formation,
+            'stripe_public_key' => $_ENV['STRIPE_PUBLIC_KEY']
+        ]);
+    }
 
+    #[Route('/payment/process/{id}', name: 'payment_process', methods: ['POST'])]
+    public function processPayment(Request $request, int $id, EntityManagerInterface $em): JsonResponse
+    {
+        // Vérifier si l'utilisateur est connecté
+        $user = $this->security->getUser();
+        if (!$user) {
+            return new JsonResponse(['error' => 'Utilisateur non connecté'], 401);
+        }
+
+        // Récupérer la formation
+        $formation = $em->getRepository(Formation::class)->find($id);
         if (!$formation) {
             return new JsonResponse(['error' => 'Formation non trouvée'], 404);
         }
 
+        // Récupérer les données du formulaire
+        $data = json_decode($request->getContent(), true);
+        $token = $data['token'] ?? null;
+        $email = $data['email'] ?? null;
+
+        if (!$token) {
+            return new JsonResponse(['error' => 'Token de carte manquant'], 400);
+        }
+
+        // Configurer Stripe avec la clé secrète
         Stripe::setApiKey($_ENV['STRIPE_SECRET_KEY']);
 
-        $session = Session::create([
-            'payment_method_types' => ['card'],
-            'line_items' => [[
-                'price_data' => [
-                    'currency' => 'eur',
-                    'product_data' => [
-                        'name' => $formation->getName(),
-                    ],
-                    'unit_amount' => $formation->getPrix() * 100,
-                ],
-                'quantity' => 1,
-            ]],
-            'mode' => 'payment',
-            'success_url' => $urlGenerator->generate('front_payment_success', [], UrlGeneratorInterface::ABSOLUTE_URL),
-            'cancel_url' => $urlGenerator->generate('front_payment_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL),
+        try {
+            // Créer une charge avec Stripe
+            $charge = Charge::create([
+                'amount' => $formation->getPrix() * 100, // Montant en centimes
+                'currency' => 'eur',
+                'source' => $token,
+                'description' => 'Paiement pour la formation: ' . $formation->getName(),
+                'receipt_email' => $email,
+                'metadata' => [
+                    'formation_id' => $formation->getId(),
+                    'user_id' => $user->getId()
+                ]
+            ]);
+
+            // Pas d'enregistrement en base de données pour l'instant
+            // Vous pourrez l'ajouter plus tard
+
+            return new JsonResponse([
+                'success' => true,
+                'message' => 'Paiement effectué avec succès',
+                'redirect' => $this->generateUrl('payment_success')
+            ]);
+        } catch (CardException $e) {
+            // Erreur liée à la carte
+            return new JsonResponse([
+                'error' => $e->getMessage()
+            ], 400);
+        } catch (ApiErrorException $e) {
+            // Autres erreurs Stripe
+            return new JsonResponse([
+                'error' => 'Une erreur est survenue lors du traitement du paiement: ' . $e->getMessage()
+            ], 500);
+        } catch (\Exception $e) {
+            // Erreurs générales
+            return new JsonResponse([
+                'error' => 'Une erreur inattendue est survenue: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    #[Route('/payment/success', name: 'payment_success', methods: ['GET'])]
+    public function paymentSuccess(RouterInterface $router): Response
+    {
+        // Vérifier si la route existe
+        $formationsRoute = 'app_front_formation_index';
+        if (!$router->getRouteCollection()->get($formationsRoute)) {
+            // Fallback à une autre route si elle existe
+            $formationsRoute = 'app_formation_index';
+        }
+        
+        return $this->render('frontoffice/payment/success.html.twig', [
+            'formations_route' => $formationsRoute
         ]);
-
-        return new JsonResponse(['id' => $session->id]);
     }
 
-    #[Route('/front/payment/success', name: 'front_payment_success', methods: ['GET'])]
-    public function success(): Response
+    #[Route('/payment/error', name: 'payment_error', methods: ['GET'])]
+    public function paymentError(): Response
     {
-        return $this->render('frontoffice/payment/success.html.twig');
+        return $this->render('frontoffice/payment/error.html.twig');
     }
 
-    #[Route('/front/payment/cancel', name: 'front_payment_cancel', methods: ['GET'])]
-    public function cancel(): Response
+    #[Route('/payment/debug', name: 'payment_debug')]
+    public function debugFormations(EntityManagerInterface $em): Response
     {
-        return $this->render('frontoffice/payment/cancel.html.twig');
+        $formations = $em->getRepository(Formation::class)->findAll();
+        
+        return $this->render('frontoffice/payment/debug.html.twig', [
+            'formations' => $formations
+        ]);
     }
 }
+
+
+
+
+
+
+
+

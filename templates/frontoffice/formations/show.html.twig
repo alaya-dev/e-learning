@@ -33,9 +33,11 @@
                         </a>
 
                         {% if app.user %}
-                        <button id="pay-button" class="btn btn-success">
-                            <i class="fas fa-credit-card me-2"></i> Payer {{ formation.prix }} DT
-                        </button>
+                        <div class="mt-3">
+                            <a href="{{ path('payment_form', {'id': formation.id}) }}" class="btn btn-primary">
+                                Payer cette formation
+                            </a>
+                        </div>
                         {% else %}
                         <span class="text-muted">Connectez-vous pour payer</span>
                         {% endif %}
@@ -140,27 +142,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (payButton) {
         const stripe = Stripe("{{ STRIPE_PUBLIC_KEY }}");
         payButton.addEventListener('click', function () {
-            fetch('{{ path('payment_session') }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    formationId: {{ formation.id }}
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.id) {
-                    stripe.redirectToCheckout({ sessionId: data.id });
-                } else {
-                    alert('Erreur lors de la création de la session de paiement.');
-                }
-            })
-            .catch(error => {
-                console.error('Erreur :', error);
-                alert('Une erreur est survenue lors du paiement.');
-            });
+            // Rediriger vers la page de formulaire de paiement
+            window.location.href = "{{ path('payment_form', {'id': formation.id}) }}";
         });
     }
 
@@ -189,3 +172,8 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
+
+
+
+
+
